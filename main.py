@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import logging
+import asyncio
 
 # Third-party imports
 import discord
@@ -135,7 +136,6 @@ async def add_character(ctx, name: str, class_name: str):
         confirm_msg = await approval_channel.send(f"{msg.author.mention} denied the character '{name}' ({class_name}) for {ctx.author.mention}.")
 
     # Delete approval request and admin response after 60 seconds
-    import asyncio
     await asyncio.sleep(60)
     try:
         await approval_msg.delete()

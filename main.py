@@ -235,16 +235,7 @@ async def harvest(
     def check(m):
         return m.author == interaction.user and m.channel == channel
 
-    # Example: collect user input (not fully implemented)
-    # while True:
-    #     try:
-    #         msg = await bot.wait_for('message', check=check, timeout=60)
-    #         if msg.content.lower() == 'done':
-    #             break
-    #         # Parse and process the input here
-    #     except asyncio.TimeoutError:
-    #         await channel.send("Harvesting timed out.")
-    #         break
+
 
 # --- Run Bot ---
 bot.run(token, log_handler=handler, log_level=logging.DEBUG)

@@ -9,6 +9,7 @@ import time # Keep for on_ready processing
 # Import from local modules
 import config # For TOKEN, TEST_SERVER_ID, SPELLCASTING_CLASSES
 import database as db_utils # For database connection and helper functions
+from cogs.economy import CURRENCY_UNITS # Import for checking resource type
 
 # --- Environment & Logging ---
 # load_dotenv() is now in config.py
@@ -28,7 +29,8 @@ class Client(commands.Bot):
         # Load cogs
         await self.load_extension("cogs.harvesting")
         await self.load_extension("cogs.building")
-        await self.load_extension("cogs.character") # Load the new cog
+        await self.load_extension("cogs.character") 
+        await self.load_extension("cogs.economy") # Load the new economy cog
         print("DEBUG: Cogs loaded.")
 
         try:
@@ -90,69 +92,103 @@ class Client(commands.Bot):
         await self.process_commands(message)
 
     async def process_building_production(self):
-        """Processes resource production for all active buildings."""
-        print("DEBUG: Running process_building_production task.")
+        """Processes resource production for all character_buildings."""
+        print("DEBUG: Running process_building_production task for character buildings.")
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
-        try:
-            cursor.execute('SELECT building_type, channel_id, last_roll_time FROM active_rolls')
-            active_rolls_data = cursor.fetchall()
+        # Need access to economy cog's update_character_wallet or a similar utility
+        economy_cog = self.get_cog("EconomyCog")
+        if not economy_cog:
+            print("ERROR: EconomyCog not found. Cannot process building production.")
+            conn.close()
+            return
 
-            if not active_rolls_data:
-                print("DEBUG: No active rolls to process.")
+        try:
+            cursor.execute("""
+                SELECT cb.id, cb.character_id, c.name AS character_name, cb.channel_id, cb.last_collection_time, cb.custom_name,
+                       bt.name AS building_type_name, bt.resource_output, bt.resource_type, bt.resource_frequency
+                FROM character_buildings cb
+                JOIN building_types bt ON cb.building_type_id = bt.id
+                JOIN characters c ON cb.character_id = c.id
+            """) # Added JOIN with characters table and c.name
+            all_character_buildings = cursor.fetchall()
+
+            if not all_character_buildings:
+                # print("DEBUG: No character buildings to process.")
+                conn.close()
                 return
 
             current_time = int(time.time())
 
-            for building_type, channel_id, db_last_roll_time in active_rolls_data:
-                channel = self.get_channel(channel_id)
-                if not channel:
-                    print(f"WARNING: Channel ID {channel_id} for {building_type} not found. Skipping.")
-                    continue
+            for building_data in all_character_buildings:
+                building_instance_id = building_data["id"]
+                character_id = building_data["character_id"]
+                character_name = building_data["character_name"] # Get character_name from the query result
+                channel_id = building_data["channel_id"]
+                last_collection_time = building_data["last_collection_time"]
+                building_display_name = building_data["custom_name"] if building_data["custom_name"] else building_data["building_type_name"]
+                
+                resource_output = building_data["resource_output"]
+                resource_type_key = building_data["resource_type"].lower() # e.g., "gp", "sp"
+                resource_frequency = building_data["resource_frequency"]
 
-                cursor.execute(
-                    '''SELECT resource_output, resource_type, resource_frequency
-                       FROM buildings WHERE building_type = ?''', (building_type,)
-                )
-                building_info = cursor.fetchone()
-                if not building_info:
-                    print(f"WARNING: Building type '{building_type}' not found in buildings table. Skipping.")
-                    continue
-
-                resource_output, resource_type, resource_frequency = building_info
                 frequency_mapping = {
                     "daily": 86400, "hourly": 3600, "weekly": 604800, "test": 15
                 }
                 interval = frequency_mapping.get(resource_frequency.lower())
                 if not interval:
-                    print(f"WARNING: Invalid frequency '{resource_frequency}' for {building_type}. Skipping.")
+                    print(f"WARNING: Invalid frequency '{resource_frequency}' for building instance ID {building_instance_id}. Skipping.")
                     continue
 
-                time_difference = current_time - db_last_roll_time
+                time_difference = current_time - last_collection_time
                 if time_difference >= interval:
-                    num_rolls_to_process = int(time_difference // interval)
-                    total_resources_gained = 0
-                    for _ in range(num_rolls_to_process):
-                        total_resources_gained += db_utils.calculate_roll_result(resource_output) # Use helper from db_utils
+                    num_collections_to_process = int(time_difference // interval)
+                    total_resources_gained_amount = 0
+                    for _ in range(num_collections_to_process):
+                        total_resources_gained_amount += db_utils.calculate_roll_result(resource_output)
                     
-                    if num_rolls_to_process > 0: # Send message only if resources were gained
-                        await channel.send(
-                            f"Building '{building_type}' has produced **{total_resources_gained} {resource_type}** over {num_rolls_to_process} period(s)."
+                    if num_collections_to_process > 0 and total_resources_gained_amount > 0:
+                        notification_channel = self.get_channel(channel_id)
+                        
+                        # Check if the resource_type is a known currency
+                        if resource_type_key in CURRENCY_UNITS:
+                            # Add to character's wallet
+                            update_success = await economy_cog.update_character_wallet(
+                                character_id, 
+                                resource_type_key, 
+                                total_resources_gained_amount
+                            )
+
+                            if update_success:
+                                if notification_channel:
+                                    await notification_channel.send(
+                                        f"Your building '{building_display_name}' has produced **{total_resources_gained_amount} {CURRENCY_UNITS[resource_type_key]['name']}** for {character_name}."
+                                    )
+                                print(f"DEBUG: Added {total_resources_gained_amount} {resource_type_key} to {character_name} (ID: {character_id}) from building {building_instance_id}")
+                            else:
+                                if notification_channel:
+                                    await notification_channel.send(
+                                        f"Tried to add resources from '{building_display_name}' to {character_name} (ID: {character_id}), but the wallet update failed."
+                                    )
+                                print(f"ERROR: Failed to update wallet for {character_name} (ID: {character_id}) from building {building_instance_id}")
+                        else:
+                            # Handle non-currency resources (e.g., log, or if inventory system exists, add there)
+                            if notification_channel:
+                                await notification_channel.send(
+                                    f"Your building '{building_display_name}' has produced **{total_resources_gained_amount} {resource_type_key}** for {character_name}. (This is not a currency and was not added to wallet)."
+                                )
+                            print(f"DEBUG: Building {building_instance_id} produced non-currency item: {total_resources_gained_amount} {resource_type_key} for {character_name} (ID: {character_id})")
+
+                        # Update last_collection_time for this specific building instance
+                        new_last_collection_time = last_collection_time + (num_collections_to_process * interval)
+                        cursor.execute(
+                            "UPDATE character_buildings SET last_collection_time = ? WHERE id = ?",
+                            (new_last_collection_time, building_instance_id)
                         )
-                    
-                    new_last_roll_time = db_last_roll_time + (num_rolls_to_process * interval)
-                    cursor.execute(
-                        '''UPDATE active_rolls SET last_roll_time = ? WHERE building_type = ?''',
-                        (new_last_roll_time, building_type)
-                    )
-                    conn.commit()
-                    print(f"DEBUG: Processed {num_rolls_to_process} rolls for {building_type}. New last_roll_time: {new_last_roll_time}")
-                else:
-                    # Optional: Log that no production was due if needed for debugging
-                    # print(f"DEBUG: No production due for {building_type}. Last roll: {db_last_roll_time}, Current time: {current_time}, Interval: {interval}")
-                    pass
+                        conn.commit()
+                        print(f"DEBUG: Processed {num_collections_to_process} collections for building instance {building_instance_id}. New last_collection_time: {new_last_collection_time}")
         except Exception as e:
-            print(f"ERROR: An error occurred during building production processing: {e}")
+            print(f"ERROR: An error occurred during character building production processing: {e}")
         finally:
             conn.close()
 

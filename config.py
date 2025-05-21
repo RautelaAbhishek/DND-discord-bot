@@ -11,6 +11,7 @@ SPELLCASTING_CLASSES = [
     "paladin", "ranger", "artificer"
 ]
 
-# You can also move HARVEST_DC_TABLES and CREATURE_TYPE_SKILLS here
-# if they are static and don't change often.
-# For now, let's assume they are in constants.py as per your original import.
+DND_CLASSES = [
+    "Artificer", "Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk",
+    "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard",
+]

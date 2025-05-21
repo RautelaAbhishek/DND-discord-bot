@@ -1,158 +1,153 @@
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
+from discord.app_commands import Choice
 import sqlite3
 import time
-import os # For os.getenv in setup
+import os
+from typing import List
 
-# Import directly from the project root
-import database as db_utils 
-# No more sys.path manipulation
-
-# --- Constants ---
-# D&D 5e spellcasting classes (if needed here, otherwise import from config)
-# SPELLCASTING_CLASSES = [...] 
+import database as db_utils
+import config # For TEST_SERVER_ID
+from .economy import CURRENCY_UNITS # To check if resource_type is a currency
 
 class BuildingCog(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # The task is now managed by the main bot class
 
-    # Subcommand to add a building
-    @app_commands.command(
-        name="addbuilding", # Renamed to avoid conflict if you have a global 'add' command
-        description="Add a new building type with its resource details"
-    )
+    building_group = app_commands.Group(name="building", description="Manage your character's buildings.")
+
+    async def building_type_autocomplete(self, interaction: discord.Interaction, current: str) -> List[Choice[str]]:
+        choices = []
+        conn = db_utils.get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id, name FROM building_types WHERE name LIKE ?", (f"%{current}%",))
+            building_types = cursor.fetchall()
+            for bt_id, bt_name in building_types:
+                choices.append(Choice(name=bt_name, value=str(bt_id)))
+            return choices[:25]
+        finally:
+            conn.close()
+
+    @building_group.command(name="addtype", description="Define a new type of building (Admin only).")
+    @app_commands.checks.has_permissions(administrator=True)
     @app_commands.describe(
-        building_type="The type of building to add",
-        resource_output="The amount of resource the building outputs (e.g., 1d6)",
-        resource_type="The type of resource the building outputs (e.g., Gold)",
-        resource_frequency="How often the building outputs the resource (e.g., daily, hourly, weekly, test)"
+        name="The unique name for this building type (e.g., Small Mine).",
+        resource_output="The dice roll for resource amount (e.g., 1d6).",
+        resource_type="The type of resource (e.g., gp, sp, iron_ore).",
+        resource_frequency="How often it produces (daily, hourly, weekly)." # Removed "test"
     )
-    async def add_building(
-        self,
-        interaction: discord.Interaction,
-        building_type: str,
-        resource_output: str,
-        resource_type: str,
-        resource_frequency: str
-    ):
-        # Check if the user has admin permissions
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
-            return
-
+    async def add_building_type(self, interaction: discord.Interaction, name: str, resource_output: str, resource_type: str, resource_frequency: str):
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(
-                '''
-                INSERT INTO buildings (building_type, resource_output, resource_type, resource_frequency)
-                VALUES (?, ?, ?, ?)
-                ''',
-                (building_type, resource_output, resource_type, resource_frequency)
+                "INSERT INTO building_types (name, resource_output, resource_type, resource_frequency) VALUES (?, ?, ?, ?)",
+                (name, resource_output, resource_type, resource_frequency.lower())
             )
             conn.commit()
-            await interaction.response.send_message(
-                f"Building '{building_type}' added with resource output '{resource_output} {resource_type}' every '{resource_frequency}'.",
-                ephemeral=True
-            )
-        except sqlite3.Error as e:
+            await interaction.response.send_message(f"Building type '{name}' added.", ephemeral=True)
+        except sqlite3.IntegrityError:
+            await interaction.response.send_message(f"Building type '{name}' already exists.", ephemeral=True)
+        except Exception as e:
             await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
         finally:
             conn.close()
 
-    # Subcommand to roll resource output for a building
-    @app_commands.command(
-        name="rollbuilding", # Renamed to avoid conflict
-        description="Roll the resource output for a building and repeat based on its frequency"
-    )
+    @building_group.command(name="construct", description="Construct a building for your active character.")
     @app_commands.describe(
-        building_type="The type of building to roll for"
+        building_type_id="The type of building to construct.",
+        custom_name="An optional custom name for your building."
     )
-    async def roll_building(
-        self,
-        interaction: discord.Interaction,
-        building_type: str
-    ):
+    @app_commands.autocomplete(building_type_id=building_type_autocomplete)
+    async def construct_building(self, interaction: discord.Interaction, building_type_id: str, custom_name: str = None):
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute(
-            '''SELECT resource_output, resource_type, resource_frequency
-               FROM buildings WHERE building_type = ?''', (building_type,)
-        )
-        building_info = cursor.fetchone()
+        try:
+            # Get active character ID
+            cursor.execute("SELECT active_character_id FROM members WHERE discord_id = ?", (str(interaction.user.id),))
+            member_data = cursor.fetchone()
+            if not member_data or not member_data["active_character_id"]:
+                await interaction.response.send_message("You need to set an active character first using `/character setactive`.", ephemeral=True)
+                return
+            
+            active_character_id = member_data["active_character_id"]
+            bt_id = int(building_type_id)
 
-        if not building_info:
-            await interaction.response.send_message(f"No building found with type '{building_type}'.", ephemeral=True)
-            conn.close()
-            return
+            # Verify building type exists
+            cursor.execute("SELECT name FROM building_types WHERE id = ?", (bt_id,))
+            building_type_info = cursor.fetchone()
+            if not building_type_info:
+                await interaction.response.send_message("Invalid building type selected.", ephemeral=True)
+                return
 
-        resource_output, resource_type, resource_frequency = building_info
-        frequency_mapping = {
-            "daily": 86400, "hourly": 3600, "weekly": 604800, "test": 15 # Consistent test interval
-        }
-        interval = frequency_mapping.get(resource_frequency.lower())
-        if not interval:
-            await interaction.response.send_message(f"Invalid frequency '{resource_frequency}' for building '{building_type}'.", ephemeral=True)
-            conn.close()
-            return
+            current_time = int(time.time())
+            channel_id = interaction.channel_id
 
-        current_time = int(time.time())
-        
-        cursor.execute("SELECT last_roll_time FROM active_rolls WHERE building_type = ?", (building_type,))
-        active_roll_entry = cursor.fetchone()
-
-        if not active_roll_entry:
-            # First time rolling for this building
-            roll_result = db_utils._calculate_roll_result(resource_output) # Use helper from db_utils
-            await interaction.response.send_message(
-                f"Building '{building_type}' (first roll) produced **{roll_result} {resource_type}**.",
-                ephemeral=False 
-            )
             cursor.execute(
-                '''INSERT INTO active_rolls (building_type, channel_id, last_roll_time)
-                   VALUES (?, ?, ?)''',
-                (building_type, interaction.channel_id, current_time)
+                """INSERT INTO character_buildings 
+                   (character_id, building_type_id, custom_name, channel_id, last_collection_time) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                (active_character_id, bt_id, custom_name, channel_id, current_time)
             )
             conn.commit()
-        else:
-            db_last_roll_time = active_roll_entry[0]
-            time_difference = current_time - db_last_roll_time
-            num_rolls_to_process = 0
-            
-            if time_difference >= interval:
-                num_rolls_to_process = int(time_difference // interval)
-            
-            if num_rolls_to_process > 0:
-                total_resources_gained = 0
-                for _ in range(num_rolls_to_process):
-                    total_resources_gained += db_utils._calculate_roll_result(resource_output) # Use helper
-                
-                await interaction.response.send_message(
-                    f"Building '{building_type}' produced **{total_resources_gained} {resource_type}** over {num_rolls_to_process} period(s).",
-                    ephemeral=False
-                )
-                
-                new_last_roll_time = db_last_roll_time + (num_rolls_to_process * interval)
-                cursor.execute(
-                    '''UPDATE active_rolls SET last_roll_time = ?, channel_id = ? 
-                       WHERE building_type = ?''',
-                    (new_last_roll_time, interaction.channel.id, building_type)
-                )
-                conn.commit()
-            else:
-                await interaction.response.send_message(
-                    f"Not enough time has passed for '{building_type}' to produce new resources. Last collection was at <t:{db_last_roll_time}:R>.",
-                    ephemeral=True
-                )
-        conn.close()
+            building_display_name = custom_name if custom_name else building_type_info["name"]
+            await interaction.response.send_message(f"Your active character has constructed a '{building_display_name}'! Resource collection will begin.", ephemeral=False)
 
-async def setup(bot):
-    # Import config here to access TEST_SERVER_ID
-    from config import TEST_SERVER_ID
-    if TEST_SERVER_ID is None:
-        raise ValueError("TEST_SERVER_ID not found in config. Ensure .env is loaded by config.py.")
-    await bot.add_cog(BuildingCog(bot), guilds=[discord.Object(id=int(TEST_SERVER_ID))])
+        except Exception as e:
+            await interaction.response.send_message(f"An error occurred while constructing the building: {e}", ephemeral=True)
+            print(f"Error in construct_building: {e}")
+        finally:
+            conn.close()
+            
+    @building_group.command(name="mybuildings", description="View buildings owned by your active character.")
+    async def view_my_buildings(self, interaction: discord.Interaction):
+        conn = db_utils.get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT active_character_id FROM members WHERE discord_id = ?", (str(interaction.user.id),))
+            member_data = cursor.fetchone()
+            if not member_data or not member_data["active_character_id"]:
+                await interaction.response.send_message("You need to set an active character first.", ephemeral=True)
+                return
+            
+            active_character_id = member_data["active_character_id"]
+            
+            cursor.execute("""
+                SELECT cb.id, cb.custom_name, bt.name AS type_name, cb.last_collection_time, bt.resource_frequency
+                FROM character_buildings cb
+                JOIN building_types bt ON cb.building_type_id = bt.id
+                WHERE cb.character_id = ?
+            """, (active_character_id,))
+            
+            buildings = cursor.fetchall()
+            if not buildings:
+                await interaction.response.send_message("Your active character owns no buildings.", ephemeral=True)
+                return
+
+            embed = discord.Embed(title="My Character's Buildings", color=discord.Color.blue())
+            for building in buildings:
+                name = building["custom_name"] if building["custom_name"] else building["type_name"]
+                frequency_seconds = {"daily": 86400, "hourly": 3600, "weekly": 604800, "test": 15}.get(building["resource_frequency"].lower(), 0)
+                next_collection_timestamp = building["last_collection_time"] + frequency_seconds
+                next_collection_str = f"<t:{next_collection_timestamp}:R>" if frequency_seconds > 0 else "N/A"
+                embed.add_field(name=f"{name} (Type: {building['type_name']})", value=f"Next collection: {next_collection_str}", inline=False)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+            print(f"Error in view_my_buildings: {e}")
+        finally:
+            conn.close()
+
+
+async def setup(bot: commands.Bot):
+    guild_id = int(config.TEST_SERVER_ID) if config.TEST_SERVER_ID else None
+    if guild_id:
+        await bot.add_cog(BuildingCog(bot), guilds=[discord.Object(id=guild_id)])
+    else:
+        await bot.add_cog(BuildingCog(bot))
+    print("BuildingCog loaded.")
 

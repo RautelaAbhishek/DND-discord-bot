@@ -6,7 +6,7 @@ import asyncio
 from typing import List
 
 # Assuming config.py and database.py are in the parent directory (project root)
-import config
+import config # Import the whole config module
 import database as db_utils
 
 class CharacterCog(commands.Cog):
@@ -30,8 +30,17 @@ class CharacterCog(commands.Cog):
         finally:
             conn.close()
 
+    async def class_name_autocomplete(self, interaction: discord.Interaction, current: str) -> List[Choice[str]]:
+        """Autocompletes D&D 5e class names."""
+        return [
+            Choice(name=dnd_class, value=dnd_class)
+            for dnd_class in config.DND_CLASSES 
+            if current.lower() in dnd_class.lower()
+        ][:25]
+
     @character_group.command(name="create", description="Create a new character (max 3).")
     @app_commands.describe(name="Your character's name.", class_name="Your character's class.")
+    @app_commands.autocomplete(class_name=class_name_autocomplete) # Add autocomplete here
     async def create_character(self, interaction: discord.Interaction, name: str, class_name: str):
         conn = db_utils.get_db_connection()
         cursor = conn.cursor()

@@ -104,3 +104,21 @@ HARVEST_DC_TABLES = {
         20: ["Undying heart"],
     },
 }
+
+CREATURE_TYPE_SKILLS = {
+    "aberration": "Arcana",
+    "beast": "Survival",
+    "celestial": "Religion",
+    "construct": "Investigation",
+    "dragon": "Survival",
+    "elemental": "Arcana",
+    "fey": "Arcana",
+    "fiend": "Religion",
+    "giant": "Medicine",
+    "humanoid": "Medicine",
+    "monstrosity": "Survival",
+    "ooze": "Nature",
+    "plant": "Nature",
+    "undead": "Medicine",
+}
+

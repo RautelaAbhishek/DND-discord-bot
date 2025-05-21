@@ -192,7 +192,7 @@ class Client(commands.Bot):
         finally:
             conn.close()
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(minutes=30) # Changed from minutes=1 to minutes=30
     async def check_building_production(self):
         await self.process_building_production()
 

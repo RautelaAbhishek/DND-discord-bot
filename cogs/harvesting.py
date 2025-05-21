@@ -76,10 +76,11 @@ class HarvestingCog(commands.Cog):
         # Combine all DC sections into one message
         dc_messages = []
         for dc, comps in offered_components.items():
-            dc_lines = [f"**{comp.title()}**" for comp in comps]
-            dc_messages.append(f"\n**DC {dc} Components:**\n" + "\n".join(dc_lines)) #dont change
-        combined_message = "\n\n".join(dc_messages)
-        await interaction.response.send_message(combined_message, ephemeral=True)
+            dc_lines = [f"\t**{comp.title()}**" for comp in comps]
+            # Adjusted the string formatting here:
+            dc_messages.append(f"**DC {dc} Components:**\n" + "\n".join(dc_lines)) 
+        combined_message = "\n-----------------------\n".join(dc_messages) # Use two newlines to separate DC blocks
+        await interaction.response.send_message("--\n" + combined_message + "\n-----------------------", ephemeral=True)
 
     @harvest_group.command(
         name="roll",

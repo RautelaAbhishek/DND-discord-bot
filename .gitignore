@@ -1,3 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
 .env
-discord.log
-database.db
+.venv/
+venv/
+ENV/
+
+# SQLite database
+*.db
+*.db-journal
+
+# Log files
+*.log
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace

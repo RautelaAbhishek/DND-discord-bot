@@ -80,7 +80,7 @@ class HarvestingCog(commands.Cog):
             # Adjusted the string formatting here:
             dc_messages.append(f"**DC {dc} Components:**\n" + "\n".join(dc_lines)) 
         combined_message = "\n-----------------------\n".join(dc_messages) # Use two newlines to separate DC blocks
-        await interaction.response.send_message("--\n" + combined_message + "\n-----------------------", ephemeral=True)
+        await interaction.response.send_message("--\n" + combined_message + "\n-----------------------", ephemeral=False)
 
     @harvest_group.command(
         name="roll",
@@ -273,9 +273,11 @@ class HarvestingCog(commands.Cog):
             return
 
         # Respond with the successfully harvested and carved components
-        successful_list = ", ".join([comp.title() for comp in successful_components])
+        # Format the successfully harvested components as a bulleted list
+        formatted_successful_components = "\n".join([f"- {comp.title()}" for comp in successful_components])
         await interaction.followup.send(
-            f"Successfully harvested: {successful_list} (Remaining roll: {remaining_combined_roll})", ephemeral=True
+            f"**Successfully harvested:**\n{formatted_successful_components}\n\n(Remaining roll: **{remaining_combined_roll}**)", 
+            ephemeral=False
         )
 
 async def setup(bot):

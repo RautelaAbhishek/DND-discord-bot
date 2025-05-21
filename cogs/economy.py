@@ -123,8 +123,7 @@ class EconomyCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @wallet_group.command(name="add", description="Add currency to your active character's wallet (Admin/DM only).")
-    @app_commands.checks.has_permissions(administrator=True) # Restrict to administrators
+    @wallet_group.command(name="add", description="Add currency to your active character's wallet.")
     @app_commands.describe(amount="The amount of currency to add.", currency_type="The type of currency (e.g., gp, sp).")
     @app_commands.autocomplete(currency_type=currency_type_autocomplete)
     async def add_currency(self, interaction: discord.Interaction, amount: int, currency_type: str):
@@ -137,7 +136,7 @@ class EconomyCog(commands.Cog):
 
         active_char_id, active_char_name = await self.get_active_character_id_and_name(str(interaction.user.id))
         if not active_char_id:
-            await interaction.response.send_message("The user does not have an active character set.", ephemeral=True)
+            await interaction.response.send_message("You do not have an active character set. Use `/character setactive` first.", ephemeral=True)
             return
         
         success = await self.update_character_wallet(active_char_id, currency_type, amount)
@@ -146,24 +145,7 @@ class EconomyCog(commands.Cog):
         else:
             await interaction.response.send_message(f"Failed to add currency to {active_char_name}'s wallet.", ephemeral=True)
 
-    @add_currency.error
-    async def add_currency_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        if isinstance(error, app_commands.MissingPermissions):
-            message_content = "You do not have permission to use this command."
-        else:
-            message_content = f"An error occurred: {error}"
-            # It's good practice to log the full error for debugging, especially for unexpected errors
-            print(f"Error in add_currency command: {error}") 
-            # raise error # Optionally re-raise if you want it to propagate further or be caught by a global handler
-
-        if interaction.response.is_done():
-            await interaction.followup.send(message_content, ephemeral=True)
-        else:
-            await interaction.response.send_message(message_content, ephemeral=True)
-
-
-    @wallet_group.command(name="remove", description="Remove currency from your active character's wallet (Admin/DM only).")
-    @app_commands.checks.has_permissions(administrator=True) # Restrict to administrators
+    @wallet_group.command(name="remove", description="Remove currency from your active character's wallet.")
     @app_commands.describe(amount="The amount of currency to remove.", currency_type="The type of currency (e.g., gp, sp).")
     @app_commands.autocomplete(currency_type=currency_type_autocomplete)
     async def remove_currency(self, interaction: discord.Interaction, amount: int, currency_type: str):
@@ -176,7 +158,7 @@ class EconomyCog(commands.Cog):
 
         active_char_id, active_char_name = await self.get_active_character_id_and_name(str(interaction.user.id))
         if not active_char_id:
-            await interaction.response.send_message("The user does not have an active character set.", ephemeral=True)
+            await interaction.response.send_message("You do not have an active character set. Use `/character setactive` first.", ephemeral=True)
             return
         
         success = await self.update_character_wallet(active_char_id, currency_type, -amount) # Negative amount for removal
@@ -184,20 +166,6 @@ class EconomyCog(commands.Cog):
             await interaction.response.send_message(f"Removed {amount} {CURRENCY_UNITS[currency_type]['name']} from {active_char_name}'s wallet.", ephemeral=True)
         else:
             await interaction.response.send_message(f"Failed to remove currency. {active_char_name} might not have enough {CURRENCY_UNITS[currency_type]['name']}.", ephemeral=True)
-
-    @remove_currency.error
-    async def remove_currency_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        if isinstance(error, app_commands.MissingPermissions):
-            message_content = "You do not have permission to use this command."
-        else:
-            message_content = f"An error occurred: {error}"
-            print(f"Error in remove_currency command: {error}")
-            # raise error
-
-        if interaction.response.is_done():
-            await interaction.followup.send(message_content, ephemeral=True)
-        else:
-            await interaction.response.send_message(message_content, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     guild_id = int(config.TEST_SERVER_ID) if config.TEST_SERVER_ID else None

@@ -175,7 +175,7 @@ class Client(commands.Bot):
                             # Handle non-currency resources (e.g., log, or if inventory system exists, add there)
                             if notification_channel:
                                 await notification_channel.send(
-                                    f"Your building '{building_display_name}' has produced **{total_resources_gained_amount} {resource_type_key}** for {character_name}. (This is not a currency and was not added to wallet)."
+                                    f"Your building '{building_display_name}' has produced **{total_resources_gained_amount} {resource_type_key}** for {character_name}."
                                 )
                             print(f"DEBUG: Building {building_instance_id} produced non-currency item: {total_resources_gained_amount} {resource_type_key} for {character_name} (ID: {character_id})")
 

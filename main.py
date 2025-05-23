@@ -10,19 +10,9 @@ import time # Keep for on_ready processing
 import config # For TOKEN, TEST_SERVER_ID, SPELLCASTING_CLASSES
 import database as db_utils # For database connection and helper functions
 from cogs.economy import CURRENCY_UNITS # Import for checking resource type
-from aws_utils import get_secret  # Import the AWS utility function
 
 # --- Environment & Logging ---
-# Retrieve secrets from AWS Secrets Manager
-secrets = get_secret()
-if secrets:
-    import json
-    secrets = json.loads(secrets)  # Parse the JSON string into a dictionary
-    DISCORD_TOKEN = secrets.get("DISCORD_TOKEN")
-    DEV_SERVER_ID = secrets.get("DEV_SERVER_ID")
-else:
-    raise ValueError("Failed to retrieve secrets from AWS Secrets Manager.")
-
+# load_dotenv() is now in config.py
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 
 # --- Bot Class ---
@@ -220,4 +210,4 @@ bot = Client(command_prefix='!', intents=intents)
 
 # --- Run Bot ---
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN, log_handler=handler, log_level=logging.DEBUG)
+    bot.run(config.TOKEN, log_handler=handler, log_level=logging.DEBUG)

@@ -80,7 +80,7 @@ class HarvestingCog(commands.Cog):
             # Adjusted the string formatting here:
             dc_messages.append(f"**DC {dc} Components:**\n" + "\n".join(dc_lines)) 
         combined_message = "\n-----------------------\n".join(dc_messages) # Use two newlines to separate DC blocks
-        await interaction.response.send_message("--\n" + combined_message + "\n-----------------------", ephemeral=False)
+        await interaction.response.send_message("--\n" + combined_message + "\n-----------------------", ephemeral=True)
 
     @harvest_group.command(
         name="roll",

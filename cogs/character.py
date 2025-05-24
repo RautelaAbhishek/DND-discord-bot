@@ -42,66 +42,84 @@ class CharacterCog(commands.Cog):
     @app_commands.describe(name="Your character's name.", class_name="Your character's class.")
     @app_commands.autocomplete(class_name=class_name_autocomplete) # Add autocomplete here
     async def create_character(self, interaction: discord.Interaction, name: str, class_name: str):
-        conn = db_utils.get_db_connection()
-        cursor = conn.cursor()
         try:
-            cursor.execute('SELECT COUNT(*) FROM characters WHERE discord_id = ?', (str(interaction.user.id),))
-            count = cursor.fetchone()[0]
-            if count >= 3:
-                await interaction.response.send_message("You can only have up to 3 characters!", ephemeral=True)
-                return
+            # Acknowledge the interaction immediately
+            await interaction.response.defer()
 
-            is_spellcaster = class_name.lower() in config.SPELLCASTING_CLASSES
+            conn = db_utils.get_db_connection()
+            cursor = conn.cursor()
+            try:
+                cursor.execute('SELECT COUNT(*) FROM characters WHERE discord_id = ?', (str(interaction.user.id),))
+                count = cursor.fetchone()[0]
+                if count >= 3:
+                    await interaction.followup.send("You can only have up to 3 characters!", ephemeral=True)
+                    return
 
-            approval_channel = discord.utils.get(interaction.guild.text_channels, name="character-approvals")
-            if not approval_channel:
-                await interaction.response.send_message("Configuration error: 'character-approvals' channel not found.", ephemeral=True)
-                return
+                is_spellcaster = class_name.lower() in config.SPELLCASTING_CLASSES
 
-            await interaction.response.send_message(f"Your character creation request for '{name}' has been sent for admin approval in {approval_channel.mention}.", ephemeral=True)
+                # approval_channel = discord.utils.get(interaction.guild.text_channels, name="character-approvals")
+                # if not approval_channel:
+                #     await interaction.response.send_message("Configuration error: 'character-approvals' channel not found.", ephemeral=True)
+                #     return
 
-            embed = discord.Embed(
-                title="Character Approval Request",
-                description=f"User {interaction.user.mention} wants to create character:",
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="Character Name", value=name, inline=False)
-            embed.add_field(name="Class", value=class_name, inline=False)
-            embed.add_field(name="Spellcaster", value=str(is_spellcaster), inline=False)
-            
-            approval_msg = await approval_channel.send(embed=embed)
-            await approval_msg.add_reaction("✅")
-            await approval_msg.add_reaction("❌")
+                # await interaction.response.send_message(f"Your character creation request for '{name}' has been sent for admin approval in {approval_channel.mention}.", ephemeral=True)
 
-            def check(reaction, user):
-                return reaction.message.id == approval_msg.id and str(reaction.emoji) in ["✅", "❌"] and \
-                       not user.bot and any(role.permissions.administrator for role in interaction.guild.get_member(user.id).roles)
+                # embed = discord.Embed(
+                #     title="Character Approval Request",
+                #     description=f"User {interaction.user.mention} wants to create character:",
+                #     color=discord.Color.blue()
+                # )
+                # embed.add_field(name="Character Name", value=name, inline=False)
+                # embed.add_field(name="Class", value=class_name, inline=False)
+                # embed.add_field(name="Spellcaster", value=str(is_spellcaster), inline=False)
+                
+                # approval_msg = await approval_channel.send(embed=embed)
+                # await approval_msg.add_reaction("✅")
+                # await approval_msg.add_reaction("❌")
 
-            reaction, user = await self.bot.wait_for('reaction_add', timeout=86400.0, check=check) # 24 hour timeout
+                # def check(reaction, user):
+                    # return reaction.message.id == approval_msg.id and str(reaction.emoji) in ["✅", "❌"] and \
+                        #    not user.bot and any(role.permissions.administrator for role in interaction.guild.get_member(user.id).roles)
 
-            if str(reaction.emoji) == "✅":
+                # reaction, user = await self.bot.wait_for('reaction_add', timeout=86400.0, check=check) # 24 hour timeout
+
+                # if str(reaction.emoji) == "✅":
                 cursor.execute(
                     'INSERT INTO characters (discord_id, name, class, spellcaster) VALUES (?, ?, ?, ?)',
                     (str(interaction.user.id), name, class_name, is_spellcaster)
                 )
                 conn.commit()
-                await interaction.followup.send(f"Character '{name}' ({class_name}) has been approved and created!", ephemeral=True)
-                await approval_channel.send(f"{user.mention} approved character '{name}' for {interaction.user.mention}.")
-            else:
-                await interaction.followup.send(f"Character creation for '{name}' was denied by an admin.", ephemeral=True)
-                await approval_channel.send(f"{user.mention} denied character '{name}' for {interaction.user.mention}.")
+                await interaction.followup.send(f"Character '{name}' ({class_name}) has been created!", ephemeral=True)
+                # await approval_channel.send(f"{user.mention} approved character '{name}' for {interaction.user.mention}.")
+                # else:
+                    # await interaction.followup.send(f"Character creation for '{name}' was denied by an admin.", ephemeral=True)
+                    # await approval_channel.send(f"{user.mention} denied character '{name}' for {interaction.user.mention}.")
 
-        except asyncio.TimeoutError:
-            await interaction.followup.send("Character approval request for '{name}' timed out.", ephemeral=True)
-            if 'approval_msg' in locals():
-                try:
-                    await approval_msg.edit(content="This request has timed out.", embed=None, view=None)
-                except discord.HTTPException: pass
+            # except asyncio.TimeoutError:
+            #     await interaction.followup.send("Character approval request for '{name}' timed out.", ephemeral=True)
+            #     if 'approval_msg' in locals():
+            #         try:
+            #             await approval_msg.edit(content="This request has timed out.", embed=None, view=None)
+            #         except discord.HTTPException: pass
+            except Exception as e:
+                await interaction.followup.send("An error occurred during character creation.", ephemeral=True)
+                print(f"Error in create_character: {e}")
+            finally:
+                conn.close()
+        except discord.errors.NotFound:
+            # Handle expired interaction token
+            print("Interaction token expired. Sending message directly to the channel.")
+            channel = interaction.channel
+            if channel:
+                await channel.send(f"Character '{name}' ({class_name}) has been created!")
         except Exception as e:
-            await interaction.followup.send("An error occurred during character creation.", ephemeral=True)
-            print(f"Error in create_character: {e}")
-        finally:
-            conn.close()
+            print(f"An error occurred: {e}")
+            if not interaction.response.is_done():
+                try:
+                    await interaction.followup.send("An error occurred during character creation.", ephemeral=True)
+                except discord.errors.NotFound:
+                    # Handle expired token during error reporting
+                    print("Failed to send error message due to expired interaction token.")
 
     @character_group.command(name="setactive", description="Set your active character.")
     @app_commands.describe(character="The character to set as active.")

@@ -36,11 +36,10 @@ class Client(commands.Bot):
         try:
             guild_id_int = int(config.TEST_SERVER_ID) if config.TEST_SERVER_ID else None
             if guild_id_int:
-                guild = discord.Object(id=guild_id_int) 
-                self.tree.clear_commands(guild=guild)
+                guild = discord.Object(id=guild_id_int) # Use config.TEST_SERVER_ID
                 synced = await self.tree.sync(guild=guild)
                 print(f"Synced {len(synced)} commands to guild {guild.id}")
-            else: 
+            else: # Sync globally if no test server ID
                 synced = await self.tree.sync()
                 print(f"Synced {len(synced)} commands globally.")
         except Exception as e:

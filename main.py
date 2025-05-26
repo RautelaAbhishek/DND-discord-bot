@@ -34,24 +34,12 @@ class Client(commands.Bot):
         print("DEBUG: Cogs loaded.")
 
         try:
-            guild_id = config.TEST_SERVER_ID
-            if guild_id:
-                guild = discord.Object(id=int(guild_id))  # Ensure guild ID is an integer
-                print(f"DEBUG: Clearing the '/test' command for guild {guild_id}...")
-                commands = await self.tree.fetch_commands(guild=guild)
-                for command in commands:
-                    if command.name == "test":
-                        await self.tree.remove_command(command.name, guild=guild)
-                        print(f"Deleted '/test' command from guild {guild_id}.")
+            guild_id_int = int(config.TEST_SERVER_ID) if config.TEST_SERVER_ID else None
+            if guild_id_int:
+                guild = discord.Object(id=guild_id_int) # Use config.TEST_SERVER_ID
                 synced = await self.tree.sync(guild=guild)
                 print(f"Synced {len(synced)} commands to guild {guild.id}")
-            else:
-                print("DEBUG: Clearing the '/test' command globally...")
-                commands = await self.tree.fetch_commands()
-                for command in commands:
-                    if command.name == "test":
-                        await self.tree.remove_command(command.name)
-                        print("Deleted '/test' command globally.")
+            else: # Sync globally if no test server ID
                 synced = await self.tree.sync()
                 print(f"Synced {len(synced)} commands globally.")
         except Exception as e:

@@ -31,15 +31,17 @@ class Client(commands.Bot):
         await self.load_extension("cogs.building")
         await self.load_extension("cogs.character") 
         await self.load_extension("cogs.economy") # Load the new economy cog
+        await self.load_extension("cogs.test")  # Load the new test cog
         print("DEBUG: Cogs loaded.")
 
+        # Sync commands after adding the test command
         try:
             guild_id_int = int(config.TEST_SERVER_ID) if config.TEST_SERVER_ID else None
             if guild_id_int:
-                guild = discord.Object(id=guild_id_int) # Use config.TEST_SERVER_ID
+                guild = discord.Object(id=guild_id_int)
                 synced = await self.tree.sync(guild=guild)
                 print(f"Synced {len(synced)} commands to guild {guild.id}")
-            else: # Sync globally if no test server ID
+            else:
                 synced = await self.tree.sync()
                 print(f"Synced {len(synced)} commands globally.")
         except Exception as e:
